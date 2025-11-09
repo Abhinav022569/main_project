@@ -95,6 +95,31 @@ def is_fist(hand_landmarks):
                         
     return fingers_closed
 
+# --- NEW: is_pointing HELPER FUNCTION ---
+def is_pointing(hand_landmarks):
+    """Checks if the hand is in a 'Pointing' gesture (index extended, others closed)."""
+    index_tip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.INDEX_FINGER_TIP]
+    index_pip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.INDEX_FINGER_PIP]
+    
+    middle_tip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_TIP]
+    middle_pip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_PIP]
+    
+    ring_tip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.RING_FINGER_TIP]
+    ring_pip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.RING_FINGER_PIP]
+    
+    pinky_tip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.PINKY_TIP]
+    pinky_pip = hand_landmarks.landmark[mp_solutions.hands.HandLandmark.PINKY_PIP]
+    
+    # Rule: Index is extended (tip is above middle joint)
+    # AND all other fingers are closed (tips are below middle joints)
+    index_extended = index_tip.y < index_pip.y
+    other_fingers_closed = (middle_tip.y > middle_pip.y) and \
+                           (ring_tip.y > ring_pip.y) and \
+                           (pinky_tip.y > pinky_pip.y)
+                           
+    return index_extended and other_fingers_closed
+# --- END NEW HELPER ---
+
 # --- NEW: ROBUST Helper function for camera health ---
 def check_camera_health(cam):
     """
@@ -315,48 +340,76 @@ while True:
     # --- Mouse Control (Only if RIGHT hand is active AND resize mode is OFF) ---
     if is_right_active and right_hand_visible and not resize_mode_active:
         
-        # --- Feature 1: Relative Movement Logic ---
-        palm_center = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_MCP] # Landmark #9
-        index_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.INDEX_FINGER_TIP] # Landmark #8
-        
-        # On the first frame, "prime" the system
-        if first_active_frame:
-            prev_palm_x, prev_palm_y = palm_center.x, palm_center.y
-            smooth_x, smooth_y = pyautogui.position() 
-            first_active_frame = False
+        # --- NEW: Check for "Pointing" gesture ---
+        if is_pointing(right_hand_landmarks):
+            
+            # --- Feature 1: Relative Movement Logic ---
+            # We'll use the index finger tip for movement now, as it's the pointer
+            pointer_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.INDEX_FINGER_TIP] # Landmark #8
+            index_tip = pointer_tip # For pinch-to-click
+            
+            # On the first frame, "prime" the system
+            if first_active_frame:
+                prev_palm_x, prev_palm_y = pointer_tip.x, pointer_tip.y
+                smooth_x, smooth_y = pyautogui.position() 
+                first_active_frame = False
+            else:
+                delta_x = (pointer_tip.x - prev_palm_x) * screen_width * SENSITIVITY
+                delta_y = (pointer_tip.y - prev_palm_y) * screen_height * SENSITIVITY
+                
+                target_x = smooth_x + delta_x
+                target_y = smooth_y + delta_y
+                
+                smooth_x = (smooth_x * SMOOTHING_FACTOR) + (target_x * (1 - SMOOTHING_FACTOR))
+                smooth_y = (smooth_y * SMOOTHING_FACTOR) + (target_y * (1 - SMOOTHING_FACTOR))
+                
+                pyautogui.moveTo(smooth_x, smooth_y)
+                
+                prev_palm_x, prev_palm_y = pointer_tip.x, pointer_tip.y
+            # --- End of Relative Movement ---
+
+            # --- Feature 3: Pinch-to-Click (still uses index finger) ---
+            thumb_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.THUMB_TIP]
+            wrist = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.WRIST]
+            middle_pip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_PIP]
+            hand_size = get_distance(wrist, middle_pip)
+            
+            if hand_size > 0.01: # Avoid division by zero
+                pinch_distance = get_distance(index_tip, thumb_tip) / hand_size
+            
+                if pinch_distance < CLICK_THRESHOLD:
+                    if not click_lock:
+                        print("CLICK!")
+                        pyautogui.click()
+                        click_lock = True
+                
+                if pinch_distance > (CLICK_THRESHOLD * 1.5):
+                    click_lock = False
+
         else:
-            delta_x = (palm_center.x - prev_palm_x) * screen_width * SENSITIVITY
-            delta_y = (palm_center.y - prev_palm_y) * screen_height * SENSITIVITY
+            # --- NEW: Hand is active, but not pointing ---
+            # Reset the 'first_active_frame' flag.
+            # This ensures that when we start pointing again, it re-primes from the mouse's current position.
+            first_active_frame = True
             
-            target_x = smooth_x + delta_x
-            target_y = smooth_y + delta_y
+            # Check for pinch-to-click even when not moving
+            index_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.INDEX_FINGER_TIP] # Landmark #8
+            thumb_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.THUMB_TIP]
+            wrist = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.WRIST]
+            middle_pip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_PIP]
+            hand_size = get_distance(wrist, middle_pip)
+
+            if hand_size > 0.01: 
+                pinch_distance = get_distance(index_tip, thumb_tip) / hand_size
             
-            smooth_x = (smooth_x * SMOOTHING_FACTOR) + (target_x * (1 - SMOOTHING_FACTOR))
-            smooth_y = (smooth_y * SMOOTHING_FACTOR) + (target_y * (1 - SMOOTHING_FACTOR))
-            
-            pyautogui.moveTo(smooth_x, smooth_y)
-            
-            prev_palm_x, prev_palm_y = palm_center.x, palm_center.y
-        # --- End of Relative Movement ---
-        
-        # --- Feature 3: Pinch-to-Click ---
-        thumb_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.THUMB_TIP]
-        
-        wrist = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.WRIST]
-        middle_pip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_PIP]
-        hand_size = get_distance(wrist, middle_pip)
-        
-        if hand_size > 0.01: # Avoid division by zero
-            pinch_distance = get_distance(index_tip, thumb_tip) / hand_size
-        
-            if pinch_distance < CLICK_THRESHOLD:
-                if not click_lock:
-                    print("CLICK!")
-                    pyautogui.click()
-                    click_lock = True
-            
-            if pinch_distance > (CLICK_THRESHOLD * 1.5):
-                click_lock = False
+                if pinch_distance < CLICK_THRESHOLD:
+                    if not click_lock:
+                        print("CLICK! (while stationary)")
+                        pyautogui.click()
+                        click_lock = True
+                
+                if pinch_distance > (CLICK_THRESHOLD * 1.5):
+                    click_lock = False
         
     # --- Drawing and Display (Always on) ---
     
