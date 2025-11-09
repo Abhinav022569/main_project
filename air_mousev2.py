@@ -13,11 +13,11 @@ mp_solutions = mp.solutions
 PHONE_CAM_INDEX = 1  # The index of your DroidCam (usually 1 or 2)
 LAPTOP_CAM_INDEX = 0 # The index of your built-in webcam (usually 0)
 
-# --- Gesture & Movement Tuning ---
-SMOOTHING_FACTOR = 0.8    # 0.0=no smooth, 1.0=no movement.
-CLICK_THRESHOLD = 0.08    # Normalized distance for a pinch
-ACTIVATION_TIMEOUT = 1.5  # Seconds to wait for the next gesture in the sequence
-SENSITIVITY = 2.6         # Multiplies mouse movement. Higher = faster.
+# --- Gesture & Movement Tuning --- 
+SMOOTHING_FACTOR = 0.8    # 0.0=no smooth, 1.0=no movement. 
+CLICK_THRESHOLD = 0.08    # Normalized distance for a pinch 
+ACTIVATION_TIMEOUT = 1.5  # Seconds to wait for the next gesture in the sequence 
+SENSITIVITY = 2.6         # Multiplies mouse movement. Higher = faster. 
 RESIZE_SENSITIVITY_THRESHOLD = 0.03 # How much hand distance must change to trigger a resize key press
 
 # --- Camera Health Tuning ---
@@ -199,8 +199,8 @@ current_state_left = "IDLE"
 last_gesture_time_right = 0
 last_gesture_time_left = 0
 
-# --- 3. Click Lock Variable ---
-click_lock = False
+# --- 3. Click Lock Variable (Now a MOUSE DOWN/UP lock) ---
+click_lock = False # False = Mouse is UP, True = Mouse is DOWN
 
 # --- 4. Resize Mode Variables ---
 resize_mode_active = False
@@ -368,7 +368,7 @@ while True:
                 prev_palm_x, prev_palm_y = pointer_tip.x, pointer_tip.y
             # --- End of Relative Movement ---
 
-            # --- Feature 3: Pinch-to-Click (still uses index finger) ---
+            # --- UPDATED: Pinch-to-Drag Logic ---
             thumb_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.THUMB_TIP]
             wrist = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.WRIST]
             middle_pip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_PIP]
@@ -377,39 +377,52 @@ while True:
             if hand_size > 0.01: # Avoid division by zero
                 pinch_distance = get_distance(index_tip, thumb_tip) / hand_size
             
+                # Check for "mouse down" (pinch in)
                 if pinch_distance < CLICK_THRESHOLD:
                     if not click_lock:
-                        print("CLICK!")
-                        pyautogui.click()
-                        click_lock = True
+                        print("MOUSE DOWN! (Drag mode)")
+                        pyautogui.mouseDown() # <-- Now presses AND HOLDS
+                        click_lock = True # click_lock now means "mouse is down"
                 
-                if pinch_distance > (CLICK_THRESHOLD * 1.5):
-                    click_lock = False
+                # Check for "mouse up" (pinch out)
+                elif pinch_distance > (CLICK_THRESHOLD * 1.5):
+                    if click_lock:
+                        print("MOUSE UP! (Drag end)")
+                        pyautogui.mouseUp() # <-- Now releases
+                        click_lock = False # click_lock now means "mouse is up"
 
         else:
-            # --- NEW: Hand is active, but not pointing ---
+            # --- Hand is active, but not pointing ---
             # Reset the 'first_active_frame' flag.
             # This ensures that when we start pointing again, it re-primes from the mouse's current position.
             first_active_frame = True
             
-            # Check for pinch-to-click even when not moving
-            index_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.INDEX_FINGER_TIP] # Landmark #8
-            thumb_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.THUMB_TIP]
-            wrist = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.WRIST]
-            middle_pip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_PIP]
-            hand_size = get_distance(wrist, middle_pip)
+            # --- Stationary Click Logic ---
+            # (We only check for a stationary click if the mouse is NOT already held down)
+            if not click_lock:
+                index_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.INDEX_FINGER_TIP] # Landmark #8
+                thumb_tip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.THUMB_TIP]
+                wrist = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.WRIST]
+                middle_pip = right_hand_landmarks.landmark[mp_solutions.hands.HandLandmark.MIDDLE_FINGER_PIP]
+                hand_size = get_distance(wrist, middle_pip)
 
-            if hand_size > 0.01: 
-                pinch_distance = get_distance(index_tip, thumb_tip) / hand_size
-            
-                if pinch_distance < CLICK_THRESHOLD:
-                    if not click_lock:
-                        print("CLICK! (while stationary)")
-                        pyautogui.click()
-                        click_lock = True
+                if hand_size > 0.01: 
+                    pinch_distance = get_distance(index_tip, thumb_tip) / hand_size
                 
-                if pinch_distance > (CLICK_THRESHOLD * 1.5):
-                    click_lock = False
+                    # Check for "mouse down" (pinch in)
+                    if pinch_distance < CLICK_THRESHOLD:
+                        print("CLICK! (stationary)")
+                        pyautogui.click() # Do a single, quick click
+                        # We don't set click_lock here, because we want to be able to do multiple clicks
+                        # To prevent 1000 clicks, we'll just re-prime the state machine
+                        current_state_right = "IDLE"
+            
+            # --- NEW: Emergency Mouse Up ---
+            # If we stop pointing while the mouse is held down, release the mouse.
+            if click_lock:
+                print("MOUSE UP! (Forced release)")
+                pyautogui.mouseUp()
+                click_lock = False
         
     # --- Drawing and Display (Always on) ---
     
