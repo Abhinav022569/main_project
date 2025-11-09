@@ -14,10 +14,10 @@ PHONE_CAM_INDEX = 1  # The index of your DroidCam (usually 1 or 2)
 LAPTOP_CAM_INDEX = 0 # The index of your built-in webcam (usually 0)
 
 # --- Gesture & Movement Tuning ---
-SMOOTHING_FACTOR = 0.5    # 0.0=no smooth, 1.0=no movement.
-CLICK_THRESHOLD = 0.05    # Normalized distance for a pinch
+SMOOTHING_FACTOR = 0.8    # 0.0=no smooth, 1.0=no movement.
+CLICK_THRESHOLD = 0.08    # Normalized distance for a pinch
 ACTIVATION_TIMEOUT = 1.5  # Seconds to wait for the next gesture in the sequence
-SENSITIVITY = 2.5         # Multiplies mouse movement. Higher = faster.
+SENSITIVITY = 2.6         # Multiplies mouse movement. Higher = faster.
 RESIZE_SENSITIVITY_THRESHOLD = 0.03 # How much hand distance must change to trigger a resize key press
 
 # --- Camera Health Tuning ---
